@@ -8,7 +8,7 @@ from .ndb import Model, Behavior
 from .messages import model_message, list_message
 
 try:
-    from endpoints import get_current_user, NotFoundException, BadRequestException
+    from endpoints import get_current_user, NotFoundException, BadRequestException, ForbiddenException, UnauthorizedException
     from .endpoints import auto_method, auto_service
     from .endpoints import default as default_endpoint
 except ImportError as e:
