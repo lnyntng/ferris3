@@ -1,4 +1,7 @@
 import ferris3
+import inflection
+from google.appengine.ext import ndb
+
 
 #
 # Method implementations.
@@ -41,6 +44,15 @@ def get_impl(Model, Message, itemId):
         .value()
 
 
+def get_by_keyname_impl(Model, Message, itemId):
+    return ferris3.ToolChain(ndb.Key(Model, itemId)) \
+        .ndb.get() \
+        .raise_if(None, ferris3.NotFoundException()) \
+        .ndb.check_kind(Model) \
+        .messages.serialize(Message) \
+        .value()
+
+
 def delete_impl(Model, itemId):
     return ferris3.ToolChain(itemId) \
         .ndb.key() \
@@ -70,6 +82,23 @@ def insert_impl(Model, Message, request):
         .messages.serialize(Message) \
         .value()
 
+
+def insert_with_params_impl(Model, Message, request):
+    raw_model = ferris3.ToolChain(request) \
+        .messages.deserialize(Model) \
+        .value()
+
+    # if keyname parameter is sent in request
+    if request.keyname:
+        raw_model.key = ndb.Key(Model, request.keyname)  # set keyname
+    if request.parent:
+        parent_key = ndb.Key(urlsafe=request.parent)
+        raw_model.key = ndb.Key(Model, request.keyname, parent=parent_key)  # set parent_key
+
+    raw_model.put()
+    return ferris3.ToolChain(request) \
+        .value()
+
 #
 # Full method wrappers.
 # Can be used as endpoint methods directly.
@@ -96,7 +125,9 @@ def list(Model, Message=None, ListMessage=None, query=None, name='list'):
     if callable(query):
         query = query()
 
-    @ferris3.auto_method(returns=ListMessage, name=name)
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+
+    @ferris3.auto_method(returns=ListMessage, name=name, http_method='GET', path=model_name)
     def inner(self, request):
         return list_impl(ListMessage, query)
 
@@ -119,7 +150,9 @@ def paginated_list(Model, Message=None, ListMessage=None, query=None, limit=50, 
     if callable(query):
         query = query()
 
-    @ferris3.auto_method(returns=ListMessage, name=name)
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+
+    @ferris3.auto_method(returns=ListMessage, name=name, http_method='GET', path=model_name)
     def inner(self, request, pageToken=(str, '')):
         return paginated_list_impl(ListMessage, query, limit, pageToken)
 
@@ -154,9 +187,29 @@ def get(Model, Message=None, name='get'):
     if not Message:
         Message = ferris3.model_message(Model)
 
-    @ferris3.auto_method(returns=Message, name=name)
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+    path = model_name + '/{itemId}'
+
+    @ferris3.auto_method(returns=Message, name=name, http_method='GET', path=path)
     def inner(self, request, itemId=(str,)):
         return get_impl(Model, Message, itemId)
+
+    return inner
+
+
+def get_by_keyname(Model, Message=None, name='get'):
+    """
+    Implements a straightfoward get method by using the urlsafe version of the entity's key.
+    """
+    if not Message:
+        Message = ferris3.model_message(Model)
+
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+    path = model_name + '/{itemId}'
+
+    @ferris3.auto_method(returns=Message, name=name, http_method='GET', path=path)
+    def inner(self, request, itemId=(str,)):
+        return get_by_keyname_impl(Model, Message, itemId)
 
     return inner
 
@@ -165,8 +218,10 @@ def delete(Model, name='delete'):
     """
     Implements a straightfoward delete method by using the urlsafe version of the entity's key.
     """
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+    path = model_name + '/{itemId}'
 
-    @ferris3.auto_method(name=name, http_method='DELETE')
+    @ferris3.auto_method(name=name, http_method='DELETE', path=path)
     def inner(self, request, itemId=(str,)):
         delete_impl(Model, itemId)
         return None
@@ -181,9 +236,28 @@ def insert(Model, Message=None, name='insert'):
     if not Message:
         Message = ferris3.model_message(Model)
 
-    @ferris3.auto_method(returns=Message, name=name, http_method='POST')
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+
+    @ferris3.auto_method(returns=Message, name=name, http_method='POST', path=model_name)
     def inner(self, request=(Message,)):
         return insert_impl(Model, Message, request)
+
+    return inner
+
+
+def insert_with_params(Model, Message=None, name='insert_with_params'):
+    """
+    Implements the insert method. The request fields are determined by the ``Message`` parameter.
+    """
+    if not Message:
+        Message = ferris3.model_message(Model)
+        MessageWithKeyName = ferris3.messages.model_message_with_keyname(Model)
+
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+
+    @ferris3.auto_method(returns=MessageWithKeyName, name=name, http_method='POST', path=model_name)
+    def inner(self, request=(MessageWithKeyName,)):
+        return insert_with_params_impl(Model, Message, request)
 
     return inner
 
@@ -196,7 +270,10 @@ def update(Model, Message=None, name='update'):
     if not Message:
         Message = ferris3.model_message(Model)
 
-    @ferris3.auto_method(returns=Message, name=name, http_method='POST')
+    model_name = inflection.underscore(inflection.pluralize(Model.__name__))
+    path = model_name + '/{itemId}'
+
+    @ferris3.auto_method(returns=Message, name=name, http_method='POST', path=path)
     def inner(self, request=(Message,), itemId=(str,)):
         return update_impl(Model, Message, itemId, request)
 
