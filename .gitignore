@@ -1,6 +1,7 @@
 *.pyc
 .appengine_data
 *.egg-info
+build
 dist
 docs/_build
 .DS_Store
